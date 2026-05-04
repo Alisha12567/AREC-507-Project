@@ -1,0 +1,188 @@
+
+<style>
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);border:0}
+.parcel-grid{display:grid;grid-template-columns:repeat(20,1fr);gap:2px;margin:8px 0}
+.parcel{width:100%;aspect-ratio:1;border-radius:2px;cursor:pointer;transition:opacity .15s}
+.stat-row{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:10px 0}
+.stat{background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:10px 12px}
+.stat-label{font-size:11px;color:var(--color-text-secondary);margin-bottom:3px}
+.stat-val{font-size:20px;font-weight:500;color:var(--color-text-primary)}
+.stat-sub{font-size:11px;color:var(--color-text-tertiary);margin-top:2px}
+.scenario-header{display:flex;gap:8px;align-items:center;margin:12px 0 4px}
+.badge{font-size:11px;padding:2px 8px;border-radius:10px;font-weight:500}
+.ctrl-row{display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin:10px 0;font-size:13px;color:var(--color-text-secondary)}
+.tooltip{position:absolute;background:var(--color-background-primary);border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);padding:8px 10px;font-size:12px;pointer-events:none;z-index:10;min-width:160px;line-height:1.5;display:none}
+.grid-wrap{position:relative}
+</style>
+
+<h2 class="sr-only">Interactive two-period simulation of conservation easement tax credit welfare effects on 100 heterogeneous parcels</h2>
+
+<div class="ctrl-row">
+  <span>Tax credit rate:</span>
+  <input type="range" min="0" max="100" step="5" value="50" id="credit-slider" style="width:140px">
+  <span id="credit-label" style="min-width:32px;font-weight:500;color:var(--color-text-primary)">50%</span>
+  <span style="margin-left:8px">of FMV (avg parcel value)</span>
+  <button onclick="reseed()" style="margin-left:auto">Reseed parcels ↻</button>
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:4px">
+
+  <div>
+    <div class="scenario-header">
+      <span style="font-size:13px;font-weight:500;color:var(--color-text-primary)">Scenario A — no policy</span>
+      <span class="badge" style="background:var(--color-background-secondary);color:var(--color-text-secondary)">counterfactual</span>
+    </div>
+    <div class="grid-wrap">
+      <div class="parcel-grid" id="grid-a"></div>
+      <div class="tooltip" id="tip-a"></div>
+    </div>
+    <div class="stat-row" id="stats-a"></div>
+  </div>
+
+  <div>
+    <div class="scenario-header">
+      <span style="font-size:13px;font-weight:500;color:var(--color-text-primary)">Scenario B — with tax credit</span>
+      <span class="badge" style="background:var(--color-background-info);color:var(--color-text-info)">policy on</span>
+    </div>
+    <div class="grid-wrap">
+      <div class="parcel-grid" id="grid-b"></div>
+      <div class="tooltip" id="tip-b"></div>
+    </div>
+    <div class="stat-row" id="stats-b"></div>
+  </div>
+
+</div>
+
+<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-lg);padding:12px 16px;margin-top:8px">
+  <div style="font-size:13px;font-weight:500;color:var(--color-text-primary);margin-bottom:8px">Net welfare effect: &Delta;W = W<sub>credit</sub> &minus; W<sub>no-policy</sub></div>
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px" id="delta-stats"></div>
+</div>
+
+<div style="margin-top:10px;font-size:11px;color:var(--color-text-tertiary);display:flex;gap:16px;flex-wrap:wrap">
+  <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:2px;background:#1D9E75;display:inline-block"></span>Conserved — high eco. benefit</span>
+  <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:2px;background:#9FE1CB;display:inline-block"></span>Conserved — low eco. benefit</span>
+  <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:2px;background:#D85A30;display:inline-block"></span>Developed — high dev. value</span>
+  <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:2px;background:#FAC775;display:inline-block"></span>Undeveloped — low dev. value</span>
+  <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:2px;background:#AFA9EC;display:inline-block"></span>Policy-induced (new with credit)</span>
+</div>
+
+<script>
+const N=100, MEB=0.25;
+let parcels=[];
+let rng=mulberry32(42);
+
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+
+function rand(){return rng()}
+function reseed(){rng=mulberry32(Date.now());generate();render()}
+
+function generate(){
+  parcels=[];
+  for(let i=0;i<N;i++){
+    const highEco=rand()<0.45;
+    const highDev=rand()<0.4;
+    const pDev=highDev?(0.5+rand()*0.4):(0.05+rand()*0.3);
+    const devVal=highDev?(60+rand()*80):(10+rand()*40);
+    const ecoVal=highEco?(80+rand()*60):(15+rand()*40);
+    const cost=20+rand()*60;
+    const intrinsic=rand()*30;
+    parcels.push({highEco,highDev,pDev,devVal,ecoVal,cost,intrinsic});
+  }
+}
+
+function simulate(creditRate){
+  const creditPct=creditRate/100;
+  return parcels.map(p=>{
+    const avgFMV=50;
+    const Ti=creditPct*avgFMV;
+    const conservedNoPolicy=(p.intrinsic>=p.cost);
+    const conservedPolicy=(p.intrinsic+Ti>=p.cost);
+    const policyInduced=(!conservedNoPolicy&&conservedPolicy);
+    const developed=!conservedPolicy&&(rand()<p.pDev);
+    const wNoPolicy=conservedNoPolicy?(p.ecoVal):(p.pDev*p.devVal);
+    const wPolicy=conservedPolicy?(p.ecoVal-Ti*(1+MEB)):(p.pDev*p.devVal);
+    return{...p,Ti,conservedNoPolicy,conservedPolicy,policyInduced,developed,wNoPolicy,wPolicy};
+  });
+}
+
+function color(p,scenario){
+  if(scenario==='a'){
+    if(p.conservedNoPolicy) return p.highEco?'#1D9E75':'#9FE1CB';
+    if(p.pDev*p.devVal>20) return '#D85A30';
+    return '#FAC775';
+  } else {
+    if(p.policyInduced) return '#AFA9EC';
+    if(p.conservedPolicy) return p.highEco?'#1D9E75':'#9FE1CB';
+    if(p.pDev*p.devVal>20) return '#D85A30';
+    return '#FAC775';
+  }
+}
+
+function buildGrid(id,tipId,scenario,results){
+  const grid=document.getElementById(id);
+  const tip=document.getElementById(tipId);
+  grid.innerHTML='';
+  results.forEach((p,i)=>{
+    const d=document.createElement('div');
+    d.className='parcel';
+    d.style.background=color(p,scenario);
+    d.addEventListener('mousemove',e=>{
+      const conserved=scenario==='a'?p.conservedNoPolicy:p.conservedPolicy;
+      const w=scenario==='a'?p.wNoPolicy:p.wPolicy;
+      tip.style.display='block';
+      tip.style.left=Math.min(e.offsetX+8,grid.offsetWidth-170)+'px';
+      tip.style.top=(e.offsetY+8)+'px';
+      tip.innerHTML=`<b>Parcel ${i+1}</b><br>Eco benefit: $${p.ecoVal.toFixed(0)}<br>Dev value: $${p.devVal.toFixed(0)} (p=${p.pDev.toFixed(2)})<br>Conservation cost: $${p.cost.toFixed(0)}<br>Intrinsic motivation: $${p.intrinsic.toFixed(0)}<br>${scenario==='b'?`Credit Ti: $${p.Ti.toFixed(0)}<br>`:''}Status: ${conserved?'Conserved':'Not conserved'}<br>Welfare: $${w.toFixed(1)}`;
+    });
+    d.addEventListener('mouseleave',()=>{tip.style.display='none'});
+    grid.appendChild(d);
+  });
+}
+
+function buildStats(id,results,scenario){
+  const conserved=results.filter(p=>scenario==='a'?p.conservedNoPolicy:p.conservedPolicy);
+  const totalW=results.reduce((s,p)=>s+(scenario==='a'?p.wNoPolicy:p.wPolicy),0);
+  const fiscalCost=scenario==='b'?results.filter(p=>p.conservedPolicy).reduce((s,p)=>s+p.Ti,0):0;
+  const induced=scenario==='b'?results.filter(p=>p.policyInduced).length:0;
+  const el=document.getElementById(id);
+  el.innerHTML=`
+    <div class="stat"><div class="stat-label">Parcels conserved</div><div class="stat-val">${conserved.length}</div><div class="stat-sub">of 100 parcels</div></div>
+    <div class="stat"><div class="stat-label">Total welfare</div><div class="stat-val">$${Math.round(totalW)}</div><div class="stat-sub">sum across parcels</div></div>
+    <div class="stat"><div class="stat-label">${scenario==='b'?'Fiscal cost':'Forgone dev.'}</div><div class="stat-val">${scenario==='b'?'$'+Math.round(fiscalCost):'-'}</div><div class="stat-sub">${scenario==='b'?'Ti × conserved':'no credit issued'}</div></div>
+    <div class="stat"><div class="stat-label">${scenario==='b'?'Policy-induced':'Always conserved'}</div><div class="stat-val">${scenario==='b'?induced:conserved.length}</div><div class="stat-sub">${scenario==='b'?'new with credit':'intrinsic only'}</div></div>
+  `;
+}
+
+function buildDelta(results){
+  const wA=results.reduce((s,p)=>s+p.wNoPolicy,0);
+  const wB=results.reduce((s,p)=>s+p.wPolicy,0);
+  const dW=wB-wA;
+  const induced=results.filter(p=>p.policyInduced);
+  const gainParcels=induced.filter(p=>p.ecoVal>p.pDev*p.devVal+p.Ti);
+  const lossParcels=induced.filter(p=>p.ecoVal<p.pDev*p.devVal);
+  const el=document.getElementById('delta-stats');
+  const sign=dW>=0?'+':'';
+  const col=dW>=0?'var(--color-text-success)':'var(--color-text-danger)';
+  el.innerHTML=`
+    <div class="stat"><div class="stat-label">&Delta;W (net welfare change)</div><div class="stat-val" style="color:${col}">${sign}$${Math.round(dW)}</div><div class="stat-sub">${dW>=0?'Net welfare gain':'Net welfare loss'}</div></div>
+    <div class="stat"><div class="stat-label">Efficient conservation</div><div class="stat-val" style="color:var(--color-text-success)">${gainParcels.length}</div><div class="stat-sub">parcels: Ei &gt; piDi + Ti</div></div>
+    <div class="stat"><div class="stat-label">Inefficient conservation</div><div class="stat-val" style="color:var(--color-text-danger)">${lossParcels.length}</div><div class="stat-sub">parcels: Ei &lt; piDi</div></div>
+  `;
+}
+
+function render(){
+  const rate=parseInt(document.getElementById('credit-slider').value);
+  document.getElementById('credit-label').textContent=rate+'%';
+  rng=mulberry32(99);
+  const results=simulate(rate);
+  buildGrid('grid-a','tip-a','a',results);
+  buildGrid('grid-b','tip-b','b',results);
+  buildStats('stats-a',results,'a');
+  buildStats('stats-b',results,'b');
+  buildDelta(results);
+}
+
+document.getElementById('credit-slider').addEventListener('input',render);
+generate();
+render();
+</script>
